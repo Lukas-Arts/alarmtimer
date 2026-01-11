@@ -11,13 +11,18 @@ Tasks/Alarms will be resumed after reboot using a ~/.config/autostart shortcut.
 * make the script executable (e.g. `chmod +x ./alarmtimer`)
 * execute the script with `./alarmtimer -install`
 
-This will:
+
+### How it works
+
+The installation will:
 * create the ~/scripts directory
 * copy the script to ~/scripts/alarmtimer
 * update ~/.profiles to include ~/scripts in $PATH
 * create symlinks for 'alarm' and 'timer'
 * create the ~/scripts/AlarmTimer directory to handle the Alarms / Timers
 * create a ~/.config/autostart/alarmtimer.desktop to resume existing Timers / Alarms after reboot
+
+For each new Alarm / Timer, a notify-send notification is send to the UI and a new `<alarm name>.alarmtimer` File is created in ~/scripts/AlarmTimer/, containing the target datetime as a UNIX timestamp. The programm then just sleeps until the time is elapsed and then sends another notification and deletes the file. You can use `alarmtimer -l` (or compare the timestamps from the .alarmtimer files yourself) to watch the progress of the Timer / Alarm. After reboot, the ~/.config/autostart/alarmtimer.desktop shortcut triggers a scan of the ~/scripts/AlarmTimer dir for uncompleted Alarms / Timers and restarts their process, or notifies about elapsed timers.
 
 ## How to use
 
