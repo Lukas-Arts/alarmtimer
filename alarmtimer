@@ -1,0 +1,209 @@
+#!/bin/bash
+
+# Set Alarm/Timer: alarmtimer "<alarm name>" <datetime>
+# Kill Alarm/Timer: alarmtimer -k "<alarm name>"
+# List running Alarms/Timer: alarmtimer -l
+# Add to your conky-file: ${execi 10 alarmtimer -l}
+
+function cleanup()
+{
+    rm $alarmFile
+    echo "Timer aborted!"
+    exit 0
+}
+function timestring()
+{
+    tdiff=$(( $1 - $(date +%s) ))
+    hours=$(( tdiff/3600 ))
+    mins=$(( tdiff/60 - hours*60))
+    tstr="${mins}min"
+    if [ $hours -ne 0 ]
+    then
+        tstr="${hours}h ${mins}min"
+    fi
+    echo "$tstr"
+}
+
+case "$1" in
+    '-install')
+        if [ ! -d ~/scripts ];
+        then
+            echo "creating ~/scripts..."
+            mkdir ~/scripts
+        fi
+        
+        echo "updating script..."
+        # always update the script
+        mv ${BASH_SOURCE[0]} ~/scripts/alarmtimer
+        
+        # check ~/.profiles to add ~/scripts to $PATH
+        containsPathBlock=$(cat ~/.profile | grep "if \[ \-d \"\$HOME/scripts\" \] ; then")
+        if [ -z "$containsPathBlock" ];
+        then
+            echo "updating ~/.profiles to add ~/scripts to \$PATH"
+            PATHBLOCK=$(cat << 'EOF'
+# set PATH so it includes user's private scripts if it exists
+if [ -d "$HOME/scripts" ] ; then
+    PATH="$HOME/scripts:$PATH"
+fi
+EOF
+)
+            # 2. Use Perl to replace that block with nothing
+            # -0777 reads the whole file as one string
+            # \Q and \E handle the special characters like [ ] and $
+            #perl -i -0777 -pe 's/\Q$ENV{PATHBLOCK}\E\n?//g' ~/.profile
+            
+            echo "$PATHBLOCK" >> ~/.profile
+            source ~/.profile 
+        fi
+        
+        # create soft symlinks for 'alarm' and 'timer'
+        if [ ! -f ~/scripts/alarm ];
+        then
+            echo "setting up symlink for 'alarm'..."
+            ln -s ~/scripts/alarmtimer ~/scripts/alarm
+        fi
+        if [ ! -f ~/scripts/timer ];
+        then
+            echo "setting up symlink for 'timer'..."
+            ln -s ~/scripts/alarmtimer ~/scripts/timer
+        fi
+        
+        # create AlarmTimer folder for the alarmtimer files
+        if [ ! -d ~/scripts/AlarmTimer ];
+        then
+            echo "creating ~/scripts/AlarmTimer for alarmtimer files..."
+            mkdir ~/scripts/AlarmTimer
+        fi
+        
+        
+        if [ ! -f ~/.config/autostart/alarmtimer.desktop ];
+        then
+            echo "setting up '~/.config/autostart/alarmtimer.desktop'..."
+            echo "[Desktop Entry]
+Type=Application
+Exec=$HOME/scripts/alarmtimer -resume
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name[en_IN]=alarmtimer
+Name=alarmtimer
+Comment[en_IN]=
+Comment=
+X-GNOME-Autostart-Delay=30" >> $HOME/.config/autostart/alarmtimer.desktop
+        fi
+        
+        # create cron line to resume alarms/timers on reboot
+        #cronContainsScripts=$(crontab -l 2>/dev/null | grep "scripts/alarmtimer")
+        #if [ -z "$cronContainsScripts" ];
+        #then
+        #    #echo "crontab does not contain script!"
+        #    crontab -l 2>/dev/null; echo "@reboot $HOME/scripts/alarmtimer -resume" | crontab -
+        #fi
+        
+        echo "finished isntalling script!"
+        exit 0
+    ;;
+    '-resume')
+        for entry in "$HOME/scripts/AlarmTimer"/*;
+        do
+            if [ -f "$entry" ]; then
+                filename="${entry##*/}"
+                filename="${filename%.*}"
+                echo "trying to resume alarm for $filename"
+                read -r timestamp < $entry
+                # run alarm in background (&) while redirect stdout and stderr (> /dev/null 2>&1)
+                alarmtimer $filename "@$timestamp" > /dev/null 2>&1 &
+            fi
+        done
+        echo "finished resuming alarms"
+        exit 0
+    ;;
+    '-l')
+        for entry in "$HOME/scripts/AlarmTimer"/*;
+        do
+            if [ -f "$entry" ]; then
+                filename="${entry##*/}"
+                filename="${filename%.*}"
+                # read only the first line from $entry file
+                read -r timestamp < $entry
+                tstr=$(timestring timestamp)
+                echo "$filename: $tstr"
+            fi
+        done
+        exit 0
+    ;;
+    '-k')
+        if [ -f "$HOME/scripts/AlarmTimer/${2}.alarmtimer" ]; then
+            # kill process of running alarm
+            pkill -f "alarmtimer ${2}"
+            # also search for aliasses
+            pkill -f "alarm ${2}"
+            pkill -f "timer ${2}"
+            # then remove the .alarm file
+            rm "$HOME/scripts/AlarmTimer/${2}.alarmtimer"
+            notify-send -t 10 -i warning "Alarm/Timer Killed!" "${2}" --icon=appointment-soon
+        fi
+        exit 0
+    ;;
+    *)
+        if [ $# -ne 2 ]
+        then
+            echo "A Simple alarm/timer program with notifications using notify-send"
+            echo "Tasks/Alarms will be resumed after reboot by utilizing cron"
+            echo "by 1ynx"
+            echo ""
+            echo "How to use:"
+            echo ""
+            echo "alarmtimer <alarm name> <datetime>        Set Alarm/Timer"
+            echo "alarmtimer -k <alarm name>                Kill Alarm/Timer"
+            echo "alarmtimer -l                             List running Alarms/Timer"
+            echo ""
+            echo "Tipp: Add '\${execi 10 alarmtimer -l}' to your conky-file to get a list of running alarms/timer with the time left"
+            echo ""
+        else
+            alarmname=$1
+            timearg=$2
+            time=$(date -d "$timearg" +%s)
+            current=$(date +%s)
+            #if time is before now, add 24h
+            if [ $time -lt $current ]
+            then
+                time=$((time + 86400))
+            fi
+            
+            timestr=$(date -d "@$time" +%R)
+            
+            # kill process of running alarm with same name
+            #pkill -f "alarmtimer ${alarmname}"
+            # also search for aliasses
+            #pkill -f "alarm ${alarmname}"
+            #pkill -f "timer ${alarmname}"
+            
+            echo "Setting Alarm/Timer for $timestr"
+            
+            timediff=$(( time - current ))
+            min=$(( timediff / 60 ))
+            millisecondsToMinute=$(( 60000 * min ))
+
+            alarmFile="$HOME/scripts/AlarmTimer/${alarmname}.alarmtimer"
+
+            # Clean alarm file on SIGINT
+            trap cleanup INT
+            
+            # write target time to alarm file
+            echo "$time" > "$alarmFile"
+
+            tstr=$(timestring time)
+            
+            notify-send -i warning "$alarmname" "Alarm/Timer set for $timestr (${tstr})" --icon=appointment-soon
+            
+            sleep $timediff
+
+            rm "$alarmFile"
+            # critical to make it not disappear without user interaction
+            notify-send -u critical -i warning "Finished Alarm/Timer" "$alarmname" --icon=appointment-soon
+            #paplay /usr/share/sounds/freedesktop/stereo/complete.oga
+        fi
+    ;;
+esac
