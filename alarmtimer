@@ -7,7 +7,7 @@
 
 function cleanup()
 {
-    rm $alarmFile
+    rm "$alarmFile"
     echo "Timer aborted!"
     exit 0
 }
@@ -150,12 +150,13 @@ X-GNOME-Autostart-Delay=30" >> $HOME/.config/autostart/alarmtimer.desktop
         if [ $# -ne 2 ]
         then
             echo "A Simple alarm/timer program with notifications using notify-send"
-            echo "Tasks/Alarms will be resumed after reboot by utilizing cron"
+            echo "A short notification appears, when an Alarm / Timer is started or killed. When an Alarm / Timer is finished, a critical notification is shown, that needs user-interaction to disappear."
+            echo "Tasks/Alarms will be resumed after reboot using a ~/.config/autostart shortcut."
             echo "by 1ynx"
             echo ""
             echo "How to use:"
             echo ""
-            echo "alarmtimer <alarm name> <datetime>        Set Alarm/Timer"
+            echo "alarmtimer <alarm name> <datetime>        Set Alarm/Timer. <datetime> uses the *date* syntax. So valid inputs may be '10mins', 'tomorrow 10', 'Monday 10:15', '10', '10:00' etc."
             echo "alarmtimer -k <alarm name>                Kill Alarm/Timer"
             echo "alarmtimer -l                             List running Alarms/Timer"
             echo ""
@@ -164,11 +165,20 @@ X-GNOME-Autostart-Delay=30" >> $HOME/.config/autostart/alarmtimer.desktop
         else
             alarmname=$1
             timearg=$2
+            
+            alarmFile="$HOME/scripts/AlarmTimer/${alarmname}.alarmtimer"
             time=$(date -d "$timearg" +%s)
             current=$(date +%s)
             #if time is before now, add 24h
             if [ $time -lt $current ]
             then
+                if [[ "$timearg" =~ ^\@.* ]]
+                then
+                    rm "$alarmFile"
+                    # critical to make it not disappear without user interaction
+                    notify-send -u critical -i warning "Alarm/Timer elapsed since last boot" "$alarmname, $(date -d "@$time" +%R)" --icon=appointment-soon
+                    exit 0;
+                fi
                 time=$((time + 86400))
             fi
             
@@ -186,7 +196,6 @@ X-GNOME-Autostart-Delay=30" >> $HOME/.config/autostart/alarmtimer.desktop
             min=$(( timediff / 60 ))
             millisecondsToMinute=$(( 60000 * min ))
 
-            alarmFile="$HOME/scripts/AlarmTimer/${alarmname}.alarmtimer"
 
             # Clean alarm file on SIGINT
             trap cleanup INT
